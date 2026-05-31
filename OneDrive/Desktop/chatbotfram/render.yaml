@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: agrofarm-backend
+    env: python
+    plan: free
+    region: oregon
+    branch: main
+    workingDirectory: Backend
+    buildCommand: "pip install -r Backend/requirements.txt"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
