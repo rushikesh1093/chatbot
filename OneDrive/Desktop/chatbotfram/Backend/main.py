@@ -24,6 +24,7 @@ else:
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-4-maverick")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_API_KEY_PLACEHOLDER = "your_openrouter_api_key_here"
 APP_TITLE = "Agrofarm RAG API"
 
 
@@ -98,7 +99,7 @@ def ingest_documents() -> IngestResponse:
 async def chat(req: ChatRequest) -> ChatResponse:
     api_key, model = get_runtime_openrouter_settings()
 
-    if not api_key or api_key == "your_openrouter_api_key_here":
+    if not api_key or api_key == OPENROUTER_API_KEY_PLACEHOLDER:
         raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY is missing on backend.")
 
     language = req.language if req.language in language_prompts else "en"
@@ -153,6 +154,9 @@ async def chat(req: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Chat pipeline failed: {str(exc)}")
+    
+    
+    
 
 
 if __name__ == "__main__":

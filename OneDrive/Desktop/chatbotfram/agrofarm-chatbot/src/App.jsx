@@ -12,6 +12,7 @@ function App() {
   const [controller, setController] = useState(null);
 
   const bottomRef = useRef(null);
+  const recognitionRef = useRef(null);
 
   const API_BASE_URL =
     import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000';
@@ -108,40 +109,94 @@ function App() {
   };
 
   const startSpeechRecognition = () => {
-    const recognition = new (
-      window.SpeechRecognition || window.webkitSpeechRecognition
-    )();
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition || null;
 
-    recognition.lang =
-      languages.find((l) => l.code === selectedLanguage)?.voiceLang ||
-      'en-US';
+    if (!SpeechRecognition) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content:
+            '⚠️ Speech recognition is not supported in this browser. Use Chrome or Edge and allow microphone access.',
+        },
+      ]);
 
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
+      return;
+    }
 
-    recognition.onstart = () => {
-      setIsListening(true);
-    };
+    // Avoid creating multiple instances
+    if (recognitionRef.current) return;
 
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
+    try {
+      const recognition = new SpeechRecognition();
 
-      setInput(transcript);
+      recognitionRef.current = recognition;
 
+      recognition.lang =
+        languages.find((l) => l.code === selectedLanguage)?.voiceLang ||
+        'en-US';
+
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+
+        setInput(transcript);
+
+        setIsListening(false);
+
+        sendMessage(transcript);
+      };
+
+      recognition.onerror = (event) => {
+        setIsListening(false);
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: `⚠️ Speech recognition error: ${event.error || 'unknown'}`,
+          },
+        ]);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+        recognitionRef.current = null;
+      };
+
+      recognition.start();
+    } catch (err) {
       setIsListening(false);
 
-      sendMessage(transcript);
-    };
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: '⚠️ Could not start speech recognition. Check microphone permissions.',
+        },
+      ]);
+    }
+  };
 
-    recognition.onerror = () => {
-      setIsListening(false);
-    };
+  const stopSpeechRecognition = () => {
+    const r = recognitionRef.current;
+    if (r) {
+      try {
+        r.stop();
+      } catch (e) {
+        // ignore
+      }
+      recognitionRef.current = null;
+    }
 
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognition.start();
+    setIsListening(false);
   };
 
   const sendMessage = async (rawInput) => {
@@ -370,7 +425,11 @@ function App() {
               className={`mic-btn ${
                 isListening ? 'listening' : ''
               }`}
-              onClick={startSpeechRecognition}
+              onClick={() =>
+                isListening
+                  ? stopSpeechRecognition()
+                  : startSpeechRecognition()
+              }
             >
               {isListening ? '🎙️' : '🎤'}
             </button>
