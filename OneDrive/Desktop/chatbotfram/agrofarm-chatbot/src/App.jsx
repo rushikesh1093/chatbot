@@ -1,6 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import './App.css';
 
+// Defined outside component so it's stable across renders
+const languages = [
+  { code: 'en', name: 'English', voiceLang: 'en-US', welcome: '👋 Hello farmer! Ask me about crops, fertilizers, pests, diseases, or farming tips.' },
+  { code: 'hi', name: 'Hindi', voiceLang: 'hi-IN', welcome: '👋 नमस्ते किसान! फसलों, खाद, कीटों, बीमारियों या खेती के बारे में पूछें।' },
+  { code: 'ta', name: 'Tamil', voiceLang: 'ta-IN', welcome: '👋 வணக்கம் விவசாயி! பயிர்கள், உரங்கள், பூச்சிகள் அல்லது விவசாய குறிப்புகள் பற்றி கேளுங்கள்।' },
+  { code: 'te', name: 'Telugu', voiceLang: 'te-IN', welcome: '👋 నమస్కారం రైతు! పంటలు, ఎరువులు, తెగుళ్లు లేదా వ్యవసాయ చిట్కాల గురించి అడగండి।' },
+  { code: 'mr', name: 'Marathi', voiceLang: 'mr-IN', welcome: '👋 नमस्कार शेतकरी! पिके, खते, कीड, रोग किंवा शेतीच्या टिप्सबद्दल विचारा.' },
+  { code: 'bh', name: 'Bhojpuri', voiceLang: 'hi-IN', welcome: '👋 प्रणाम किसान भाई! फसल, खाद, कीड़ा-मकोड़ा या खेती के बारे में पूछीं।' },
+  { code: 'ha', name: 'Haryanvi', voiceLang: 'hi-IN', welcome: '👋 नमस्ते किसान! फसल, खाद, कीड़े-मकोड़े या खेती के बारे में पूछो।' },
+  { code: 'bn', name: 'Bengali', voiceLang: 'bn-IN', welcome: '👋 নমস্কার কৃষক! ফসল, সার, কীটপতঙ্গ বা চাষের টিপস সম্পর্কে জিজ্ঞেস করুন।' },
+];
+
 function App() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -9,6 +21,13 @@ function App() {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [controller, setController] = useState(null);
+  const speechRetriesRef = useRef(0);
+
+  // Always holds the latest selectedLanguage — safe to read inside callbacks
+  const selectedLanguageRef = useRef(selectedLanguage);
+  useEffect(() => {
+    selectedLanguageRef.current = selectedLanguage;
+  }, [selectedLanguage]);
 
   const bottomRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -16,23 +35,11 @@ function App() {
   const API_URL =
     'https://chatbot-backend-production-b64c.up.railway.app';
 
-  const languages = [
-    { code: 'en', name: 'English', voiceLang: 'en-US' },
-    { code: 'hi', name: 'Hindi', voiceLang: 'hi-IN' },
-    { code: 'ta', name: 'Tamil', voiceLang: 'ta-IN' },
-    { code: 'te', name: 'Telugu', voiceLang: 'te-IN' },
-    { code: 'mr', name: 'Marathi', voiceLang: 'mr-IN' },
-    { code: 'bh', name: 'Bhojpuri', voiceLang: 'hi-IN' },
-    { code: 'ha', name: 'Haryanvi', voiceLang: 'hi-IN' },
-    { code: 'bn', name: 'Bengali', voiceLang: 'bn-IN' },
-  ];
-
   useEffect(() => {
     setMessages([
       {
         role: 'assistant',
-        content:
-          '👋 Hello farmer! Ask me about crops, fertilizers, pests, diseases, or farming tips.',
+        content: languages.find((l) => l.code === 'en')?.welcome,
       },
     ]);
   }, []);
@@ -48,9 +55,10 @@ function App() {
 
     const utterance = new SpeechSynthesisUtterance(text);
 
+    // Use the passed langCode, falling back to the ref for the current language
+    const code = langCode ?? selectedLanguageRef.current;
     utterance.lang =
-      languages.find((l) => l.code === langCode)?.voiceLang ||
-      'en-US';
+      languages.find((l) => l.code === code)?.voiceLang || 'en-US';
 
     utterance.rate = 1;
     utterance.pitch = 1;
@@ -95,6 +103,31 @@ function App() {
     ]);
   };
 
+  const handleLanguageChange = (newLang) => {
+    // Stop any ongoing speech or recognition first
+    window.speechSynthesis.cancel();
+    setIsSpeaking(false);
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (e) {}
+      recognitionRef.current = null;
+    }
+    setIsListening(false);
+
+    // Abort any in-flight request
+    if (controller) {
+      controller.abort();
+      setController(null);
+    }
+    setLoading(false);
+    setInput('');
+
+    setSelectedLanguage(newLang);
+
+    // Start fresh with a welcome message in the new language
+    const welcome = languages.find((l) => l.code === newLang)?.welcome || languages[0].welcome;
+    setMessages([{ role: 'assistant', content: welcome }]);
+  };
+
   const clearChat = () => {
     window.speechSynthesis.cancel();
 
@@ -107,7 +140,7 @@ function App() {
     ]);
   };
 
-  const startSpeechRecognition = () => {
+  const startSpeechRecognition = async () => {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition || null;
 
@@ -120,49 +153,62 @@ function App() {
             '⚠️ Speech recognition is not supported in this browser. Use Chrome or Edge and allow microphone access.',
         },
       ]);
-
       return;
     }
 
     // Avoid creating multiple instances
     if (recognitionRef.current) return;
 
+    speechRetriesRef.current = 0;
+
     try {
       const recognition = new SpeechRecognition();
-
       recognitionRef.current = recognition;
 
       recognition.lang =
-        languages.find((l) => l.code === selectedLanguage)?.voiceLang ||
-        'en-US';
-
-      recognition.interimResults = false;
+        languages.find((l) => l.code === selectedLanguageRef.current)?.voiceLang || 'en-US';
+      recognition.interimResults = true;
       recognition.maxAlternatives = 1;
+      recognition.continuous = false;
 
       recognition.onstart = () => {
         setIsListening(true);
       };
 
       recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-
+        let transcript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
         setInput(transcript);
 
-        setIsListening(false);
-
-        sendMessage(transcript);
+        if (event.results[event.results.length - 1].isFinal) {
+          setIsListening(false);
+          try { recognition.stop(); } catch (e) {}
+        }
       };
 
       recognition.onerror = (event) => {
-        setIsListening(false);
+        // 'no-speech' just means silence timeout — not an error worth showing
+        // while the user may still be about to speak; let onend handle cleanup
+        if (event.error === 'no-speech') return;
 
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'assistant',
-            content: `⚠️ Speech recognition error: ${event.error || 'unknown'}`,
-          },
-        ]);
+        setIsListening(false);
+        recognitionRef.current = null;
+
+        const errorMessages = {
+          'not-allowed': '⚠️ Microphone permission denied. Please allow access in your browser settings.',
+          'network': '⚠️ Network error during speech recognition. Check your connection.',
+          'aborted': null, // user stopped — no message needed
+        };
+
+        const msg = event.error in errorMessages
+          ? errorMessages[event.error]
+          : `⚠️ Speech recognition error: ${event.error || 'unknown'}`;
+
+        if (msg) {
+          setMessages((prev) => [...prev, { role: 'assistant', content: msg }]);
+        }
       };
 
       recognition.onend = () => {
@@ -173,7 +219,7 @@ function App() {
       recognition.start();
     } catch (err) {
       setIsListening(false);
-
+      recognitionRef.current = null;
       setMessages((prev) => [
         ...prev,
         {
@@ -226,6 +272,7 @@ function App() {
         },
         body: JSON.stringify({
           question: textToSend,
+          language: selectedLanguageRef.current,
         }),
         signal: abortController.signal,
       });
@@ -251,7 +298,7 @@ function App() {
         assistantMessage,
       ]);
 
-      speak(answer, selectedLanguage);
+      speak(answer, selectedLanguageRef.current);
     } catch (error) {
       if (error.name === 'AbortError') {
         return;
@@ -296,9 +343,7 @@ function App() {
 
             <select
               value={selectedLanguage}
-              onChange={(e) =>
-                setSelectedLanguage(e.target.value)
-              }
+              onChange={(e) => handleLanguageChange(e.target.value)}
               className="language-dropdown"
             >
               {languages.map((lang) => (
