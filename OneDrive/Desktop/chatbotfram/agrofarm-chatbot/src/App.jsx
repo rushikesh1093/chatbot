@@ -150,7 +150,7 @@ function App() {
 
         setIsListening(false);
 
-        sendMessage(transcript);
+        recognition.stop();
       };
 
       recognition.onerror = (event) => {
@@ -226,6 +226,7 @@ function App() {
         },
         body: JSON.stringify({
           question: textToSend,
+          language: selectedLanguage,
         }),
         signal: abortController.signal,
       });
