@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import axios from 'axios';
 import './App.css';
 
 function App() {
@@ -14,8 +13,8 @@ function App() {
   const bottomRef = useRef(null);
   const recognitionRef = useRef(null);
 
-  const API_BASE_URL =
-    import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000';
+  const API_URL =
+    'https://chatbot-backend-production-b64c.up.railway.app';
 
   const languages = [
     { code: 'en', name: 'English', voiceLang: 'en-US' },
@@ -220,26 +219,31 @@ function App() {
     setController(abortController);
 
     try {
-      const response = await axios.post(
-        `${API_BASE_URL}/chat`,
-        {
-          question: textToSend,
-          language: selectedLanguage,
-          history: messages.slice(-8),
+      const response = await fetch(`${API_URL}/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-        {
-          signal: abortController.signal,
-        }
-      );
+        body: JSON.stringify({
+          question: textToSend,
+        }),
+        signal: abortController.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
 
       const answer =
-        response.data?.answer ||
+        data?.answer ||
         'No response from backend';
 
       const assistantMessage = {
         role: 'assistant',
         content: answer,
-        sources: response.data?.sources || [],
+        sources: data?.sources || [],
       };
 
       setMessages((prev) => [
@@ -249,10 +253,7 @@ function App() {
 
       speak(answer, selectedLanguage);
     } catch (error) {
-      if (
-        error.name === 'CanceledError' ||
-        axios.isCancel(error)
-      ) {
+      if (error.name === 'AbortError') {
         return;
       }
 
