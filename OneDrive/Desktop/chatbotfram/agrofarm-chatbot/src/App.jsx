@@ -33,7 +33,7 @@ function App() {
   const recognitionRef = useRef(null);
 
   const API_URL =
-    'https://chatbot-backend-production-b64c.up.railway.app';
+    'chatbot-backend-production-65b2.up.railway.app';
 
   useEffect(() => {
     setMessages([
